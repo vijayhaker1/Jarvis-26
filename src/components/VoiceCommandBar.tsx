@@ -1,11 +1,16 @@
-import React, { useState } from 'react';
-import { Mic, MicOff, Send, Sparkles, Terminal, Radio, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Mic, Send, Sparkles, Terminal, Radio, Globe, Languages, Volume2, Headphones } from 'lucide-react';
 import { SystemState } from '../types';
+import { VoiceSettingsModal } from './VoiceSettingsModal';
+import { speechManager, VoiceProfile } from '../utils/speechManager';
 
 interface VoiceCommandBarProps {
   isListening: boolean;
   isWakeMode: boolean;
   isAwaitingCommand: boolean;
+  isFollowUpActive?: boolean;
+  language?: 'auto' | 'en' | 'hi';
+  onLanguageChange?: (lang: 'auto' | 'en' | 'hi') => void;
   onToggleListening: () => void;
   onToggleWakeMode: () => void;
   onSubmitCommand: (command: string) => void;
@@ -16,19 +21,23 @@ interface VoiceCommandBarProps {
 }
 
 const PRESET_COMMANDS = [
-  'Hey Jarvis, reply to Pepper',
+  'What is the time now?',
+  'Tell me about yourself',
+  'Kya tum hindi bol sakte ho?',
+  'Namaste Jarvis, kaise ho?',
   'Hey Jarvis, check my mail',
-  'Hey Jarvis, run full system diagnostic',
-  'Hey Jarvis, morning briefing',
   'Hey Jarvis, dim lab lights to 30%',
+  'Hey Jarvis, run full system diagnostic',
   'Hey Jarvis, lock blast doors',
-  'Hey Jarvis, activate Deep Work focus protocol',
 ];
 
 export const VoiceCommandBar: React.FC<VoiceCommandBarProps> = ({
   isListening,
   isWakeMode,
   isAwaitingCommand,
+  isFollowUpActive = false,
+  language = 'auto',
+  onLanguageChange,
   onToggleListening,
   onToggleWakeMode,
   onSubmitCommand,
@@ -38,6 +47,17 @@ export const VoiceCommandBar: React.FC<VoiceCommandBarProps> = ({
   hasMicPermissionError = false,
 }) => {
   const [inputText, setInputText] = useState('');
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [activeVoiceProfile, setActiveVoiceProfile] = useState<VoiceProfile>(speechManager.getVoiceProfile());
+
+  useEffect(() => {
+    const unsub = speechManager.onVoiceProfileChange((profile) => {
+      setActiveVoiceProfile(profile);
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,39 +74,45 @@ export const VoiceCommandBar: React.FC<VoiceCommandBarProps> = ({
 
   return (
     <div className="w-full flex flex-col gap-3">
-      {/* Hands-Free Wake Word Mode Status Bar */}
-      <div className="w-full bg-slate-950/70 border border-cyan-900/60 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono backdrop-blur-md">
+      {/* Hands-Free Wake Word & Multilingual Bar */}
+      <div className="w-full bg-slate-950/80 border border-cyan-900/60 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono backdrop-blur-md">
         <div className="flex items-center gap-2.5">
           <div className="relative flex items-center justify-center">
             <span
               className={`w-3 h-3 rounded-full ${
-                isActuallyActive
+                isFollowUpActive
+                  ? 'bg-amber-400'
+                  : isActuallyActive
                   ? 'bg-emerald-400'
                   : isListening
                   ? 'bg-cyan-400'
                   : 'bg-slate-600'
               } shadow-[0_0_8px_currentColor]`}
             />
-            {isListening && (
-              <span className={`absolute w-5 h-5 rounded-full ${isActuallyActive ? 'bg-emerald-400/40' : 'bg-cyan-400/40'} animate-ping`} />
+            {(isListening || isFollowUpActive) && (
+              <span className={`absolute w-5 h-5 rounded-full ${isFollowUpActive ? 'bg-amber-400/40' : isActuallyActive ? 'bg-emerald-400/40' : 'bg-cyan-400/40'} animate-ping`} />
             )}
           </div>
 
           <div className="flex flex-col">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-bold text-cyan-200">
-                WAKE WORD ENGINE:
+                VOICE AGENT ENGINE:
               </span>
               <span
                 className={`font-semibold px-2 py-0.5 rounded text-[10px] ${
-                  isActuallyActive
+                  isFollowUpActive
+                    ? 'bg-amber-950/80 text-amber-300 border border-amber-500/60 animate-pulse'
+                    : isActuallyActive
                     ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50'
                     : isListening
                     ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-500/50'
                     : 'bg-slate-900 text-slate-400 border border-slate-700'
                 }`}
               >
-                {isActuallyActive
+                {isFollowUpActive
+                  ? 'CONVERSATIONAL FOLLOW-UP ACTIVE (SPEAK FREELY)'
+                  : isActuallyActive
                   ? 'HANDS-FREE ACTIVE ("HEY JARVIS")'
                   : isListening
                   ? 'LISTENING (MANUAL MIC)'
@@ -94,25 +120,93 @@ export const VoiceCommandBar: React.FC<VoiceCommandBarProps> = ({
               </span>
             </div>
             <span className="text-[11px] text-cyan-400/70 mt-0.5">
-              {isAwaitingCommand ? (
+              {isFollowUpActive ? (
+                <strong className="text-amber-300">
+                  Continuous dialogue active: ask "What is the time now?" or any question without repeating wake phrase.
+                </strong>
+              ) : isAwaitingCommand ? (
                 <strong className="text-emerald-300 animate-pulse">
                   Wake word acknowledged! Listening for your command now...
                 </strong>
               ) : isActuallyActive ? (
-                'Microphone actively listening. Simply say "Hey Jarvis" or "Hey Jarvis, [command]" anytime.'
+                'Microphone actively listening. Say "Hey Jarvis" or "Hey Jarvis, [command]" anytime in English or Hindi.'
               ) : hasMicPermissionError ? (
                 <span className="text-amber-300">
-                  Microphone access pending. Click "ENGAGE JARVIS" to grant browser permission or use buttons below.
+                  Microphone access pending. Click "ENGAGE JARVIS" to grant browser permission or click chips below.
                 </span>
               ) : (
-                'System ready. Click "ENGAGE JARVIS" or the Arc Reactor to enable hands-free listening.'
+                'System ready. Click "ENGAGE JARVIS" or the Arc Reactor to start conversing with Jarvis.'
               )}
             </span>
           </div>
         </div>
 
-        {/* Toggle Hands-Free / Engage Button */}
-        <div className="flex items-center gap-2">
+        {/* Controls: Language Selection + Toggle Hands-Free */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Language Selector */}
+          {onLanguageChange && (
+            <div className="flex items-center gap-1 bg-slate-900/90 border border-cyan-800/60 rounded-lg p-0.5">
+              <span className="px-1 text-cyan-500 flex items-center">
+                <Globe className="w-3 h-3" />
+              </span>
+              <button
+                type="button"
+                id="btn-lang-auto"
+                onClick={() => onLanguageChange('auto')}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  language === 'auto'
+                    ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                    : 'text-cyan-300 hover:text-cyan-100 hover:bg-cyan-950/60'
+                }`}
+                title="Automatic English & Hindi Detection"
+              >
+                AUTO
+              </button>
+              <button
+                type="button"
+                id="btn-lang-en"
+                onClick={() => onLanguageChange('en')}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  language === 'en'
+                    ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                    : 'text-cyan-300 hover:text-cyan-100 hover:bg-cyan-950/60'
+                }`}
+                title="English (British CADENCE)"
+              >
+                EN
+              </button>
+              <button
+                type="button"
+                id="btn-lang-hi"
+                onClick={() => onLanguageChange('hi')}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  language === 'hi'
+                    ? 'bg-amber-400 text-slate-950 shadow-sm'
+                    : 'text-amber-300/80 hover:text-amber-200 hover:bg-amber-950/60'
+                }`}
+                title="Hindi / हिन्दी Voice Engine"
+              >
+                हिन्दी
+              </button>
+            </div>
+          )}
+
+          {/* Voice Synthesis Profile Button */}
+          <button
+            type="button"
+            id="btn-voice-core-settings"
+            onClick={() => setIsVoiceModalOpen(true)}
+            className="px-2.5 py-1.5 rounded-lg bg-slate-900/90 hover:bg-cyan-950/80 border border-cyan-800/70 hover:border-cyan-400/80 text-cyan-300 hover:text-cyan-100 flex items-center gap-1.5 transition-all text-xs font-mono group shadow-sm"
+            title="Configure Iron Man JARVIS Voice (Paul Bettany MCU Tone)"
+          >
+            <Headphones className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+            <span className="hidden md:inline text-[10px] text-cyan-400/80 font-bold">VOICE:</span>
+            <span className="text-[11px] font-bold text-amber-300">
+              {activeVoiceProfile === 'ironman' ? 'PAUL BETTANY (MCU)' : activeVoiceProfile.toUpperCase()}
+            </span>
+          </button>
+
+          {/* Toggle Hands-Free / Engage Button */}
           {!isListening ? (
             <button
               id="btn-engage-jarvis"
@@ -141,40 +235,56 @@ export const VoiceCommandBar: React.FC<VoiceCommandBarProps> = ({
         </div>
       </div>
 
-      {/* Live Voice Transcript Banner (Appears when listening, speaking wake word, or typing) */}
-      {(isListening || liveTranscript || isAwaitingCommand) && (
+      {/* Live Voice Transcript Banner (Appears when listening, speaking wake word, follow-up, or typing) */}
+      {(isListening || liveTranscript || isAwaitingCommand || isFollowUpActive) && (
         <div
           className={`w-full border rounded-lg p-3 flex items-center gap-3 backdrop-blur-md shadow-[0_0_15px_rgba(6,182,212,0.15)] transition-all ${
-            isAwaitingCommand
+            isFollowUpActive
+              ? 'bg-amber-950/50 border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.3)]'
+              : isAwaitingCommand
               ? 'bg-emerald-950/50 border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.3)] animate-pulse'
               : 'bg-cyan-950/40 border-cyan-500/40'
           }`}
         >
           <div
             className={`w-2.5 h-2.5 rounded-full ${
-              isAwaitingCommand ? 'bg-emerald-300 animate-ping' : 'bg-cyan-400 animate-ping'
+              isFollowUpActive
+                ? 'bg-amber-300 animate-ping'
+                : isAwaitingCommand
+                ? 'bg-emerald-300 animate-ping'
+                : 'bg-cyan-400 animate-ping'
             }`}
           />
           <div className="flex-1 text-sm font-mono text-cyan-200 flex items-center gap-1.5 flex-wrap">
             <span
               className={`font-bold uppercase text-xs ${
-                isAwaitingCommand ? 'text-emerald-300' : 'text-cyan-400/80'
+                isFollowUpActive
+                  ? 'text-amber-300'
+                  : isAwaitingCommand
+                  ? 'text-emerald-300'
+                  : 'text-cyan-400/80'
               }`}
             >
-              {isAwaitingCommand ? 'WAKE ACKNOWLEDGED:' : 'AUDIO INGRESS:'}
+              {isFollowUpActive
+                ? 'FOLLOW-UP WINDOW:'
+                : isAwaitingCommand
+                ? 'WAKE ACKNOWLEDGED:'
+                : 'AUDIO INGRESS:'}
             </span>
             <span>
-              "{liveTranscript || (isAwaitingCommand ? 'Speak your command now, sir...' : 'Listening...')}"
+              "{liveTranscript || (isFollowUpActive ? 'Listening for follow-up question... (e.g. "what is time now?")' : isAwaitingCommand ? 'Speak your directive now, sir...' : 'Listening...')}"
             </span>
           </div>
           <span
             className={`text-[10px] uppercase font-mono px-2 py-0.5 rounded border ${
-              isAwaitingCommand
+              isFollowUpActive
+                ? 'bg-amber-900 text-amber-200 border-amber-400 font-bold'
+                : isAwaitingCommand
                 ? 'bg-emerald-900 text-emerald-200 border-emerald-400 font-bold'
                 : 'bg-cyan-950 text-cyan-300 border-cyan-700'
             }`}
           >
-            {isAwaitingCommand ? 'AWAITING DIRECTIVE' : 'LIVE STREAM'}
+            {isFollowUpActive ? 'CONVERSATION ACTIVE' : isAwaitingCommand ? 'AWAITING DIRECTIVE' : 'LIVE STREAM'}
           </span>
         </div>
       )}
@@ -262,6 +372,15 @@ export const VoiceCommandBar: React.FC<VoiceCommandBarProps> = ({
           </button>
         ))}
       </div>
+
+      {/* Voice Synthesis Profile Modal */}
+      <VoiceSettingsModal
+        isOpen={isVoiceModalOpen}
+        onClose={() => {
+          setIsVoiceModalOpen(false);
+          setActiveVoiceProfile(speechManager.getVoiceProfile());
+        }}
+      />
     </div>
   );
 };

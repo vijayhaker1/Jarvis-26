@@ -23,7 +23,8 @@ import { SmartDeviceControls } from './components/SmartDeviceControls';
 import { LiveTelemetryLogs } from './components/LiveTelemetryLogs';
 import { CustomAutomationModal } from './components/CustomAutomationModal';
 import { MailCommunicationsPanel, INITIAL_EMAILS } from './components/MailCommunicationsPanel';
-import { Mail, Cpu, LayoutDashboard, Sliders, ShieldAlert, Sparkles, AlertCircle } from 'lucide-react';
+import { JarvisBriefingHUD, LatestBriefing } from './components/JarvisBriefingHUD';
+import { Mail, Cpu, LayoutDashboard, Sliders, ShieldAlert, Sparkles, AlertCircle, Terminal } from 'lucide-react';
 
 // Initial pre-configured automation workflows
 const INITIAL_WORKFLOWS: AutomationWorkflow[] = [
@@ -113,6 +114,8 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [isWakeMode, setIsWakeMode] = useState(true);
   const [isAwaitingCommand, setIsAwaitingCommand] = useState(false);
+  const [isFollowUpActive, setIsFollowUpActive] = useState(false);
+  const [language, setLanguage] = useState<'auto' | 'en' | 'hi'>('auto');
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [isSpeechSupported, setIsSpeechSupported] = useState(true);
@@ -122,6 +125,9 @@ export default function App() {
   const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
   const [hasMicPermissionError, setHasMicPermissionError] = useState(false);
   const [activeHubTab, setActiveHubTab] = useState<'all' | 'mail' | 'tasks' | 'devices' | 'logs'>('all');
+  const [latestBriefing, setLatestBriefing] = useState<LatestBriefing | null>(null);
+  const [activeCoreName, setActiveCoreName] = useState<string>('OPENROUTER (FREE)');
+  const lastExecutedCmdRef = useRef<{ text: string; time: number }>({ text: '', time: 0 });
 
   // Core Data State
   const [deviceState, setDeviceState] = useState<SmartDeviceState>(INITIAL_DEVICE_STATE);
@@ -161,6 +167,18 @@ export default function App() {
       .then((res) => res.json())
       .then((data) => {
         setGeminiConnected(data.geminiConfigured);
+        if (data.openrouterConfigured) {
+          const modelShort = data.openrouterActiveModel?.includes('deepseek')
+            ? 'OPENROUTER (DEEPSEEK V4:FREE)'
+            : data.openrouterActiveModel?.includes('nex')
+            ? 'OPENROUTER (NEX AGI:FREE)'
+            : 'OPENROUTER (FREE)';
+          setActiveCoreName(modelShort);
+        } else if (data.geminiConfigured) {
+          setActiveCoreName('GEMINI 3.1 FLASH-LITE');
+        } else {
+          setActiveCoreName('LOCAL ENGINE');
+        }
       })
       .catch((err) => {
         console.warn('Health check warning:', err);
@@ -245,7 +263,7 @@ export default function App() {
       }
     });
 
-    const unsubWake = speechManager.onWake((type, command) => {
+    const unsubWake = speechManager.onWake((type) => {
       if (type === 'WAKE_WORD_TRIGGERED') {
         // Spoke "Hey Jarvis" alone
         setSystemState('WAKE_DETECTED');
@@ -274,33 +292,63 @@ export default function App() {
         speechManager.speak(randomAck, () => {
           setSystemState('SPEAKING');
         }, () => {
-          setSystemState('WAKE_DETECTED');
+          setSystemState('LISTENING');
+          setIsAwaitingCommand(true);
+          speechManager.setAwaitingCommand(true);
         });
-      } else if (type === 'WAKE_WORD_WITH_COMMAND' && command) {
-        // Spoke "Hey Jarvis [command]"
-        setIsAwaitingCommand(false);
-        soundEngine.playBlip(1100);
-        executeCommand(command);
       }
     });
 
-    const unsubTranscript = speechManager.onTranscript((transcript, isFinal) => {
-      setLiveTranscript(transcript);
+    // Single unified command execution handler from speech recognition
+    const unsubCommand = speechManager.onCommand((command) => {
+      soundEngine.playBlip(1100);
+      executeCommand(command);
+      setLiveTranscript('');
+    });
 
-      // If user typed or spoke in manual mode without wake phrase
-      if (!isWakeMode && isFinal && transcript.trim()) {
-        soundEngine.playBlip(1100);
-        executeCommand(transcript.trim());
-        setLiveTranscript('');
+    // Transcript updates exclusively feed the live visual audio ingress HUD
+    const unsubTranscript = speechManager.onTranscript((transcript) => {
+      setLiveTranscript(transcript);
+    });
+
+    // Conversational follow-up session listener
+    const unsubFollowUp = speechManager.onFollowUpChange((active) => {
+      setIsFollowUpActive(active);
+      if (active && systemState !== 'SPEAKING' && systemState !== 'PROCESSING') {
+        setSystemState('LISTENING');
       }
     });
 
     return () => {
       unsubState();
       unsubWake();
+      unsubCommand();
       unsubTranscript();
+      unsubFollowUp();
     };
   }, [systemState, deviceState, isWakeMode]);
+
+  // Handle Voice / Linguistic Switch
+  const handleLanguageChange = (lang: 'auto' | 'en' | 'hi') => {
+    setLanguage(lang);
+    speechManager.setVoiceLanguage(lang);
+    soundEngine.playBlip(900);
+    const notification = lang === 'hi' 
+      ? 'Linguistic synthesizer configured for Hindi / बहुभाषी dialogue.'
+      : lang === 'en'
+      ? 'Linguistic synthesizer configured for English (British cadence).'
+      : 'Linguistic synthesizer set to automatic bilingual detection.';
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: 'lang_switch_' + Date.now(),
+        sender: 'system',
+        text: notification,
+        timestamp: Date.now(),
+        category: 'voice',
+      }
+    ]);
+  };
 
   // Handle Hands-Free Wake Word Toggle
   const handleToggleWakeMode = () => {
@@ -372,11 +420,15 @@ export default function App() {
       speechManager.stopHandsFreeListening();
       setIsListening(false);
       setIsWakeMode(false);
+      setIsAwaitingCommand(false);
+      speechManager.setAwaitingCommand(false);
       setSystemState('STANDBY');
     } else {
       speechManager.startHandsFreeListening();
       setIsListening(true);
       setIsWakeMode(true);
+      setIsAwaitingCommand(true);
+      speechManager.setAwaitingCommand(true);
       setHasMicPermissionError(false);
       setSystemState('LISTENING');
       soundEngine.playWakeChime();
@@ -387,6 +439,8 @@ export default function App() {
         setSystemState('SPEAKING');
       }, () => {
         setSystemState('LISTENING');
+        setIsAwaitingCommand(true);
+        speechManager.setAwaitingCommand(true);
       });
     }
   };
@@ -478,12 +532,20 @@ export default function App() {
       .replace(/^(?:(?:hey|hi|ok|okay)\s+)?jarvis\b[\s,:]*/i, '')
       .trim() || command.trim();
 
-    setIsAwaitingCommand(false);
+    if (!cleanCommand) return;
 
-    if (!isWakeMode) {
-      speechManager.stopListening();
-      setIsListening(false);
+    // Strict deduplication guard to prevent duplicate question logging or execution
+    const now = Date.now();
+    if (
+      lastExecutedCmdRef.current.text.toLowerCase() === cleanCommand.toLowerCase() &&
+      now - lastExecutedCmdRef.current.time < 2000
+    ) {
+      console.log('Debouncing duplicate command:', cleanCommand);
+      return;
     }
+    lastExecutedCmdRef.current = { text: cleanCommand, time: now };
+
+    setIsAwaitingCommand(false);
     setSystemState('PROCESSING');
     soundEngine.playScanSweep();
 
@@ -500,12 +562,10 @@ export default function App() {
       },
     ]);
 
-    // Check if command is mail related to auto-focus mail view
+    // Only switch tabs if the user explicitly commanded to open a specific subsystem
     const lowerCmd = cleanCommand.toLowerCase();
-    if (lowerCmd.includes('mail') || lowerCmd.includes('email') || lowerCmd.includes('inbox') || lowerCmd.includes('reply')) {
-      if (activeHubTab !== 'mail' && activeHubTab !== 'all') {
-        setActiveHubTab('mail');
-      }
+    if (lowerCmd.startsWith('open mail') || lowerCmd.startsWith('show mail') || lowerCmd.startsWith('check mail') || lowerCmd.startsWith('open inbox')) {
+      setActiveHubTab('mail');
     }
 
     try {
@@ -533,6 +593,28 @@ export default function App() {
         timestamp: Date.now(),
       }));
 
+      // Update latest in-HUD briefing so user sees answer immediately on the main screen without navigating anywhere
+      setLatestBriefing({
+        prompt: cleanCommand,
+        speech: speechReply,
+        displayText: displayReply,
+        category: data.category || 'voice',
+        timestamp: Date.now(),
+        source: data.source,
+        model: data.model,
+      });
+
+      if (data.source === 'openrouter') {
+        const modelShort = data.model?.includes('deepseek')
+          ? 'OPENROUTER (DEEPSEEK V4:FREE)'
+          : data.model?.includes('nex')
+          ? 'OPENROUTER (NEX AGI:FREE)'
+          : 'OPENROUTER (FREE)';
+        setActiveCoreName(modelShort);
+      } else if (data.source === 'gemini') {
+        setActiveCoreName('GEMINI 3.1 FLASH-LITE');
+      }
+
       // Append Jarvis response message
       const jarvisMsgId = 'jarvis_' + Date.now();
       setMessages((prev) => [
@@ -559,7 +641,9 @@ export default function App() {
         },
         () => {
           setIsSpeaking(false);
-          setSystemState('STANDBY');
+          // Keep conversational loop active for follow-up questions
+          setSystemState(isWakeMode || isListening ? 'LISTENING' : 'STANDBY');
+          speechManager.activateFollowUpSession(15000);
         }
       );
 
@@ -570,6 +654,13 @@ export default function App() {
     } catch (err: any) {
       console.error('Command processing failure:', err);
       const fallbackMsg = "My apologies, sir. Executing local failsafe response.";
+      setLatestBriefing({
+        prompt: cleanCommand,
+        speech: fallbackMsg,
+        displayText: `Relay Note: ${err.message}. Local failsafe activated.`,
+        category: 'diagnostic',
+        timestamp: Date.now(),
+      });
       setMessages((prev) => [
         ...prev,
         {
@@ -581,7 +672,18 @@ export default function App() {
           category: 'diagnostic',
         },
       ]);
-      setSystemState('STANDBY');
+      speechManager.speak(
+        fallbackMsg,
+        () => {
+          setIsSpeaking(true);
+          setSystemState('SPEAKING');
+        },
+        () => {
+          setIsSpeaking(false);
+          setSystemState(isWakeMode || isListening ? 'LISTENING' : 'STANDBY');
+          speechManager.activateFollowUpSession(14000);
+        }
+      );
     }
   };
 
@@ -793,6 +895,7 @@ export default function App() {
         onToggleVoice={handleToggleVoice}
         onToggleSoundFx={handleToggleSoundFx}
         geminiConnected={geminiConnected}
+        activeCoreName={activeCoreName}
       />
 
       {/* Main Workspace Area */}
@@ -829,11 +932,14 @@ export default function App() {
           />
 
           {/* Voice Input & Quick Command Trigger */}
-          <div className="w-full max-w-3xl mt-2">
+          <div className="w-full max-w-3xl mt-2 flex flex-col gap-3">
             <VoiceCommandBar
               isListening={isListening}
               isWakeMode={isWakeMode}
               isAwaitingCommand={isAwaitingCommand}
+              isFollowUpActive={isFollowUpActive}
+              language={language}
+              onLanguageChange={handleLanguageChange}
               onToggleListening={handleToggleListening}
               onToggleWakeMode={handleToggleWakeMode}
               onSubmitCommand={executeCommand}
@@ -842,6 +948,18 @@ export default function App() {
               isSpeechSupported={isSpeechSupported}
               hasMicPermissionError={hasMicPermissionError}
             />
+
+            {/* In-HUD Live Answer Card: Displays question and answer directly on the main screen without navigating anywhere */}
+            {latestBriefing && (
+              <JarvisBriefingHUD
+                briefing={latestBriefing}
+                isSpeaking={isSpeaking}
+                onReplay={() => {
+                  speechManager.speak(latestBriefing.speech);
+                }}
+                onDismiss={() => setLatestBriefing(null)}
+              />
+            )}
           </div>
         </section>
 
@@ -910,6 +1028,25 @@ export default function App() {
             >
               <Sliders className="w-3.5 h-3.5 text-cyan-400" />
               <span>HARDWARE & SECURITY</span>
+            </button>
+
+            <button
+              type="button"
+              id="tab-logs"
+              onClick={() => setActiveHubTab('logs')}
+              className={`px-3 py-1.5 rounded-lg font-mono text-xs flex items-center gap-1.5 transition-all ${
+                activeHubTab === 'logs'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/60 shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                  : 'text-slate-400 hover:text-cyan-300 hover:bg-slate-900/60 border border-transparent'
+              }`}
+            >
+              <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+              <span>LIVE TELEMETRY</span>
+              {messages.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                  {messages.length}
+                </span>
+              )}
             </button>
           </div>
 

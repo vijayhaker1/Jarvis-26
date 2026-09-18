@@ -18,7 +18,7 @@ export const LiveTelemetryLogs: React.FC<LiveTelemetryLogsProps> = ({
   }, [messages]);
 
   return (
-    <div className="w-full bg-slate-950/70 border border-cyan-900/60 rounded-xl p-4 flex flex-col gap-3 backdrop-blur-md">
+    <div id="live-telemetry-section" className="w-full bg-slate-950/70 border border-cyan-900/60 rounded-xl p-4 flex flex-col gap-3 backdrop-blur-md">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-cyan-900/50 pb-2">
         <div className="flex items-center gap-2">

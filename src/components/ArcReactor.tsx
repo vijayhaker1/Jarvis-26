@@ -8,6 +8,7 @@ interface ArcReactorProps {
   isListening: boolean;
   isSpeaking: boolean;
   isWakeMode?: boolean;
+  isFollowUpActive?: boolean;
   audioLevels?: number[];
   onClick: () => void;
   activeTaskCount: number;
@@ -18,12 +19,23 @@ export const ArcReactor: React.FC<ArcReactorProps> = ({
   isListening,
   isSpeaking,
   isWakeMode = true,
+  isFollowUpActive = false,
   audioLevels = [],
   onClick,
   activeTaskCount,
 }) => {
   // Determine core colors based on state
   const { coreColor, ringColor, glowColor, stateLabel, badgeBg } = useMemo(() => {
+    if (isFollowUpActive && !isSpeaking && state !== 'PROCESSING') {
+      return {
+        coreColor: 'from-amber-300 via-yellow-400 to-cyan-400',
+        ringColor: 'border-amber-400',
+        glowColor: 'rgba(251, 191, 36, 0.6)',
+        stateLabel: 'CONVERSATION ACTIVE: SPEAK NEXT QUESTION',
+        badgeBg: 'bg-amber-500/30 text-amber-200 border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.4)] animate-pulse',
+      };
+    }
+
     switch (state) {
       case 'WAKE_DETECTED':
         return {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Volume2, VolumeX, Bell, BellOff, ShieldAlert, Cpu, Radio, Sparkles } from 'lucide-react';
+import { Volume2, VolumeX, Bell, BellOff, ShieldAlert, Cpu, Radio, Sparkles, Headphones } from 'lucide-react';
 import { SystemTelemetry } from '../types';
 
 interface TelemetryBarProps {
@@ -9,6 +9,7 @@ interface TelemetryBarProps {
   onToggleVoice: () => void;
   onToggleSoundFx: () => void;
   geminiConnected: boolean;
+  activeCoreName?: string;
 }
 
 export const TelemetryBar: React.FC<TelemetryBarProps> = ({
@@ -18,6 +19,7 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
   onToggleVoice,
   onToggleSoundFx,
   geminiConnected,
+  activeCoreName,
 }) => {
   const [timeStr, setTimeStr] = useState('');
 
@@ -53,8 +55,16 @@ export const TelemetryBar: React.FC<TelemetryBarProps> = ({
         <div className="hidden lg:flex items-center gap-1.5 pl-3 border-l border-cyan-900/60">
           <Sparkles className="w-3.5 h-3.5 text-amber-400" />
           <span className="text-slate-400">NEURAL CORE:</span>
-          <span className={geminiConnected ? 'text-cyan-300 font-semibold' : 'text-slate-300'}>
-            {geminiConnected ? 'GEMINI 3.8 FLASH' : 'LOCAL ENGINE'}
+          <span className="text-emerald-400 font-semibold tracking-wide">
+            {activeCoreName || (geminiConnected ? 'OPENROUTER (FREE)' : 'LOCAL ENGINE')}
+          </span>
+        </div>
+
+        <div className="hidden 2xl:flex items-center gap-1.5 pl-3 border-l border-cyan-900/60">
+          <Headphones className="w-3.5 h-3.5 text-cyan-400" />
+          <span className="text-slate-400">VOCAL CORE:</span>
+          <span className="text-amber-300 font-semibold tracking-wide">
+            PAUL BETTANY (MCU)
           </span>
         </div>
       </div>
