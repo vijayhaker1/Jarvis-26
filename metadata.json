@@ -1,0 +1,6 @@
+{
+  "name": "JARVIS AI Assistant",
+  "description": "Futuristic JARVIS AI assistant with voice command recognition, holographic HUD telemetry, and real-time task automation engine.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
